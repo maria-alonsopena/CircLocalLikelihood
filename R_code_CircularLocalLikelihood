@@ -1,8 +1,13 @@
 
 ############################################################################################################
 ######                    A general framework for circular local likelihood regression                ######
-######                    María Alonso-Pena, Irène Gijbels    and   Rosa M. Crujeiras                 ######
-######                        Universidade de Santiago de Compostela and KU Leuven                    ######
+######                     								              ######
+######                    María Alonso-Pena,	 Irène Gijbels    and   Rosa M. Crujeiras             ######
+######                     								              ######
+######                     Universidade de         KU Leuven		 Universidade de              ######
+######   		    Santiago de 				  Santiago de                 ######
+######  		    Compostela                                     Compostela                 ######
+######                     								              ######
 ############################################################################################################
 
 ## Supplementary R code for the paper "A general framework for circular local likelihood regression" 
