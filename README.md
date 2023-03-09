@@ -10,3 +10,4 @@ SpikeCountData.R gives the data analysis regarding the neuronal spikes dataset a
 HumanMotorResonance.txt contains the Human Resonance dataset.
 pm10.txt contains the pollution dataset.
 spikes.txt contains the neuronal spikes dataset.
+DataDictionary.txt gives a description of the variables for the different datasets.
