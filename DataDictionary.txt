@@ -1,0 +1,24 @@
+Data dictionary regarding the files "HumanMotorResonance.txt", "pm10.txt" and "spikes.txt"
+
+
+- "HumanMotorResonance.txt"
+
+The data regards a psicological experiment where subjects where asked to observe a hand flexion-extension in front of them. The motor resonance in the primary motor cortex was measured with the H-reflex tecnique. 
+
+The file contains two columns: "Angular.position" and "Reflex.Amplitude". The first one gives the angular position of the hand, in radians, and the second one gives the H-reflex amplitude magnitude. 
+
+
+- "pm10.txt"
+
+The file contains data on pm10 concentration measurements, wind speed and wind direction in Pontevedra, Spain. Measurements were taken avery six hours.
+
+The first column, "pm10", contains the concentrations of pm10 particles. The second column, "direction", contains the wind direction, measured in degreees and with North as zero direction. Finally, the column "speed" contains the wind speed measured in km/hour.
+
+
+- "spikes.txt"
+
+The data regards an experiment with a macaque monkey, which was paralized and given a visual stimulus of moving dots. The dots moved in different directions.
+
+The first column, "direction" gives the angles, in degreess, in which the dots moved. The second column, "counts", contains the number of spikes in a specific neuron of the MT/V5 region.
+
+
