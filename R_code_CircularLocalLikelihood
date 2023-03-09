@@ -1,23 +1,13 @@
+## Supplementary R code for the paper 
+## "A general framework for circular local likelihood regression" 
 
-############################################################################################################
-######                    A general framework for circular local likelihood regression                ######
-######                     								              ######
-######                    María Alonso-Pena,	 Irène Gijbels    and   Rosa M. Crujeiras             ######
-######                     								              ######
-######                     Universidade de         KU Leuven		 Universidade de              ######
-######   		    Santiago de 				  Santiago de                 ######
-######  		    Compostela                                     Compostela                 ######
-######                     								              ######
-############################################################################################################
-
-## Supplementary R code for the paper "A general framework for circular local likelihood regression" 
-
-
-# Functions for estimation (p=1 and p=3), bias, variance, MISE, (E)CRSC. Normal, Bernoulli, Poisson and Gamma likelihoods.
+# Functions implementing the methods described in the paper:
+# estimation (p=1 and p=3), bias, variance, MISE, (E)CRSC for
+# Normal, Bernoulli, Poisson and Gamma conditional densities
 
 #################
-library(circular)
 library(Bolstad2)
+library(NPCirc)
 #################
 
 
@@ -473,7 +463,7 @@ pois_p3<-function(xseq,x,y,kappa,startv){
 		A14 <- -bn1*bn3*bn5 - 2*bn2*bn3*bn4 + bn3^3 +bn2^2*bn5 +bn1*bn4^2
 		bjti0 <-   t(kxt) * (A11 + t(s) * A12 + t(s^2) * A13  + t(s^3) * A14)
 	
-		A21 <- - bn1*bn4*bn6 -bn3^2*bn5 -bn4*bn2*bn5 +bn4^2*bn3 +bn3*bn2*bn6 +bn1*bn5^
+		A21 <- - bn1*bn4*bn6 -bn3^2*bn5 -bn4*bn2*bn5 +bn4^2*bn3 +bn3*bn2*bn6 +bn1*bn5^2
 		A22 <- bn0*bn4*bn6 + 2*bn2*bn5*bn3 + -bn3^2*bn4 - bn2^2*bn6 -bn0*bn5^2
 		A23 <- -bn0*bn3*bn6 -bn2*bn4*bn3 - bn3*bn1*bn5 + bn3^3 +bn2*bn1*bn6 +bn0*bn4*bn5
 		A24 <- bn0*bn3*bn5 + bn2^2*bn4 +bn3*bn1*bn4 - bn3^2*bn2 -bn2*bn1*bn5 - bn0*bn4^2
@@ -1523,6 +1513,18 @@ gamma_MSE_int<-function(xseq,x,y,kappa,kappa_ast,startv){
 ### Cross-validation ###
 ########################
 
+
+# Normal likelihood
+
+lscv <- function(x,y, bw) {
+  error <- numeric(n)
+  for (j in 1:n) {
+    error[j] <- (y[j] - NPCirc:::RegCircLin(x[-j], y[-j], x[j], bw, method="LL",tol=0.0000001))^2
+  }
+  return(mean(error))
+}
+
+
 # Bernoulli likelihood
 
 logistic_loglik_cv <- function(x,y,kappa,startv) {	
@@ -1574,5 +1576,654 @@ gamma_loglik_cv <- function(x,y,kappa,startv) {
 	  }
 
 }
+
+
+### Gamma: Partially linear model functions
+
+
+
+## 1. Estimation of the linear part
+
+gamma_1<-function(x,y,startv){
+
+	n<-length(x)
+
+	beta0<-startv[1]
+	beta1<-startv[2]
+	beta<-c(beta0,beta1)
+
+	X<-cbind(rep(1,n),x)
+	G<-t(X)%*%(y/exp(beta0+beta1*x)-1)
+	V<-diag(y/exp(beta0+beta1*x))
+	H<--t(X)%*%V%*%X
+	
+	beta<-beta - solve(H)%*%G
+	beta0<-beta[1]
+	beta1<-beta[2]
+
+
+
+	res<-5000
+	tol<-0.001
+	b<-0
+	while(res>tol){
+
+		beta0_old<-beta0
+		beta1_old<-beta1
+	
+		G<-t(X)%*%(y/exp(beta0+beta1*x)-1)
+		V<-diag(y/exp(beta0+beta1*x))
+		H<--t(X)%*%V%*%X
+	
+		beta<-beta - solve(H)%*%G
+		beta0<-beta[1]
+		beta1<-beta[2]
+
+
+		res<-max(c(abs(beta0-beta0_old),abs(beta1-beta1_old)))
+		b<-b+1
+		
+	}
+	return(c(beta0,beta1))
+}
+
+
+# 2. Estimation of the nonparametric part
+
+gamma_2<-function(xseq,theta,x0,y,kappa,alpha0,alpha1,startv){
+
+	n<-length(x0)
+	
+	k<-length(xseq)
+	beta0<-rep(startv[1],k)
+	beta1<-rep(startv[2],k)
+
+	x_t <- outer(theta, xseq, "-")
+	kxt <- exp(kappa * cos(x_t))/(besselI(kappa,0)*2*pi)
+	s <- sin(x_t)
+	ts <- t(beta0+beta1*t(s))+alpha0+alpha1*x0
+	ets <- 1*y*exp(-ts)
+	bn0 <- apply(kxt * ets, 2, sum)
+	bn1 <- apply(kxt * ets * s, 2, sum)
+	bn2 <- apply(kxt * ets * s^2, 2, sum)
+	bjti0 <-  t(kxt)*(bn2 - t(s) * bn1)
+	
+	
+	bjti1 <-  t(kxt)*(t(s)*bn0 - bn1)
+	
+	K <- ets-1
+	
+	beta0<-beta0 + colSums(t(bjti0) * K)/(bn2*bn0-bn1^2)
+	beta1<-beta1 + colSums(t(bjti1) * K)/(bn2*bn0-bn1^2)
+
+	
+	res<-5000
+	tol<-0.001
+	b<-0
+	while(res>tol){
+
+
+		beta0_old<-beta0
+		beta1_old<-beta1
+
+		ts <- (t(beta0+beta1*t(s))+alpha0+alpha1*x0)
+		ets <- 1*y*exp(-ts)
+
+		K <- ets-1
+		bn0 <- apply(kxt * ets, 2, sum)
+		bn1 <- apply(kxt * ets * s, 2, sum)
+		bn2 <- apply(kxt * ets * s^2, 2, sum)
+		bjti0 <- t(kxt)*(bn2 - t(s) * bn1)
+		bjti1 <- t(kxt)*(t(s)*bn0 - bn1)
+
+		beta0<-beta0 + colSums(t(bjti0) * K)/(bn2*bn0-bn1^2)
+		beta1<-beta1 + colSums(t(bjti1) * K)/(bn2*bn0-bn1^2)
+
+		
+		res<-max(c(abs(beta0-beta0_old),abs(beta1-beta1_old)))
+		b<-b+1
+	}
+	
+
+	return(list(beta0,beta1))
+}
+
+
+# 3. Re-estimation of the linear part
+
+gamma_3<-function(x,y,rho,startv){
+
+	n<-length(x)
+
+	beta0<-startv[1]
+	beta1<-startv[2]
+	beta<-c(beta0,beta1)
+
+	X<-cbind(rep(1,n),x)
+	G<-t(X)%*%(y/exp(beta0+beta1*x+rho)-1)
+	V<-diag(y/exp(beta0+beta1*x+rho))
+	H<--t(X)%*%V%*%X
+	
+	beta<-beta - solve(H)%*%G
+	beta0<-beta[1]
+	beta1<-beta[2]
+
+
+
+	res<-5000
+	tol<-0.001
+	b<-0
+	while(res>tol){
+
+		beta0_old<-beta0
+		beta1_old<-beta1
+	
+		G<-t(X)%*%(y/exp(beta0+beta1*x+rho)-1)
+		V<-diag(y/exp(beta0+beta1*x+rho))
+		H<--t(X)%*%V%*%X
+	
+		beta<-beta - solve(H)%*%G
+		beta0<-beta[1]
+		beta1<-beta[2]
+
+
+		res<-max(c(abs(beta0-beta0_old),abs(beta1-beta1_old)))
+		b<-b+1
+	}
+	return(c(beta0,beta1))
+}
+
+
+
+
+## Full function
+
+
+Gamma_PLM<-function(xseq,x,theta,y,kappa,startv){
+
+	L1<-gamma_1(x,y,startv)
+
+	k<-length(xseq)
+	xseq_theta<-c(xseq,theta)
+	
+	L2<-gamma_2(xseq_theta,theta,x,y,kappa,L1[1],L1[2],startv)
+	L3<-gamma_3(x,y,(L2[[1]])[(k+1):(length(xseq_theta))],startv)
+
+	
+	return(list(L3,L2[[1]]))
+
+}
+
+
+
+## Selection of the concentration parameter
+
+
+gamma_plm_p3<-function(xseq,theta,x0,y,kappa,alpha0,alpha1,startv){
+
+	k<-length(xseq)
+	beta0<-rep(startv[1],k)
+	beta1<-rep(startv[2],k)
+	beta2<-rep(startv[3],k)
+	beta3<-rep(startv[4],k)
+
+	beta0_old<-beta0
+	beta1_old<-beta1
+	beta2_old<-beta2
+	beta3_old<-beta3
+
+	x_t <- outer(theta, xseq, "-")
+	kxt <- exp(kappa * cos(x_t))/(besselI(kappa,0)*2*pi)
+	s <- sin(x_t)
+	ts <- t(beta0+beta1*t(s)+beta2*t(s^2)+beta3*t(s^3))+alpha0+alpha1*x0
+	ets <- 1*y*exp(-ts)
+
+	K <- ets-1
+	bn0 <- apply(kxt * ets, 2, sum)
+	bn1 <- apply(kxt * ets * s, 2, sum)
+	bn2 <- apply(kxt * ets * s^2, 2, sum)
+	bn3 <- apply(kxt * ets * s^3, 2, sum)
+	bn4 <- apply(kxt * ets * s^4, 2, sum)
+	bn5 <- apply(kxt * ets * s^5, 2, sum)
+	bn6 <- apply(kxt * ets * s^6, 2, sum)
+
+
+	A11 <- bn2*bn4*bn6 +2*bn3*bn4*bn5 - bn4^3 - bn3^2*bn6 -bn2*bn5^2
+
+	A12 <- -bn1*bn4*bn6 -bn2*bn4*bn5 -bn3^2*bn5 + bn3*bn4^2 +bn2*bn3*bn6 + bn1*bn5^2
+
+	A13 <- bn1*bn3*bn6 + bn2*bn4^2 + bn2*bn3*bn5 - bn3^2*bn4 - bn2^2*bn6 - bn1*bn4*bn5
+
+	A14 <- -bn1*bn3*bn5 - 2*bn2*bn3*bn4+bn3^3 +bn2^2*bn5 +bn1*bn4^2
+
+
+	bjti0 <-   t(kxt) * (A11 + t(s) * A12 + t(s^2) * A13  + t(s^3) * A14)
+	
+
+	
+	A21 <- - bn1*bn4*bn6 -bn3^2*bn5 -bn4*bn2*bn5 +bn4^2*bn3 +bn3*bn2*bn6 +bn1*bn5^2
+	
+	A22 <- bn0*bn4*bn6 + 2*bn2*bn5*bn3 + -bn3^2*bn4 - bn2^2*bn6 -bn0*bn5^2
+
+	A23 <- -bn0*bn3*bn6 -bn2*bn4*bn3 - bn3*bn1*bn5 + bn3^3 +bn2*bn1*bn6 +bn0*bn4*bn5
+	
+	A24 <- bn0*bn3*bn5 + bn2^2*bn4 +bn3*bn1*bn4 - bn3^2*bn2 -bn2*bn1*bn5 - bn0*bn4^2
+
+
+	bjti1 <- t(kxt) * (A21 + t(s) * A22 + t(s^2) * A23  + t(s^3) * A24)
+
+
+
+	A31 <- bn1*bn3*bn6 + bn2*bn5*bn3 + bn4^2*bn2 - bn4*bn3^2 - bn2^2*bn6 - bn1*bn5*bn4
+
+	A32 <- -bn0*bn3*bn6 - bn1*bn5*bn3 - bn3*bn2*bn4 +bn3^3 + bn1*bn2*bn6 + bn0*bn5*bn4
+
+	A33 <- bn0*bn2*bn6 + 2*bn1*bn3*bn4 - bn3^2*bn2 - bn1^2*bn6 - bn0*bn4^2
+
+	A34 <- -bn0*bn2*bn5 - bn1*bn4*bn2 - bn3^2*bn1 + bn3*bn2^2 + bn1^2*bn5 + bn0*bn3*bn4
+
+
+	bjti2 <- t(kxt) * (A31 + t(s) * A32 + t(s^2) * A33  + t(s^3) * A34)
+
+
+
+	A41 <- -bn1*bn3*bn5 - 2*bn2*bn3*bn4 + bn3^3 + bn2^2*bn5 + bn1*bn4^2
+
+	A42 <- bn0*bn3*bn5 + bn1*bn4*bn3 + bn2^2*bn4 - bn2*bn3^2 -bn1*bn2*bn5 -bn0*bn4^2
+
+	A43 <- -bn0*bn2*bn5 - bn1*bn3^2 - bn2*bn1*bn4 + bn2^2*bn3 + bn1^2*bn5 +bn0*bn3*bn4
+
+	A44 <- bn0*bn2*bn4 + 2*bn1*bn2*bn3 - bn2^3 - bn1^2*bn4 - bn0*bn3^2
+
+
+	bjti3 <- t(kxt) * (A41 + t(s) * A42 + t(s^2) * A43  + t(s^3) * A44)
+
+
+
+	determinante<-bn3^4 - (3* bn2 * bn4 + 2 *bn1* bn5 + bn0 *bn6)* bn3^2 + 2 *((bn2^2 + bn0 *bn4)* bn5 + bn1 *(bn4^2 + bn2 *bn6))* bn3 - bn0* bn4^3 + bn2^2* bn4^2 + bn1^2 *bn5^2 - bn2^3* bn6 - bn1^2* bn4* bn6 + bn2* (bn0* (bn4* bn6 - bn5^2) - 2* bn1 *bn4* bn5)
+	
+
+	beta0<-beta0 + colSums(t(bjti0) * K)/(determinante)
+	beta1<-beta1 + colSums(t(bjti1) * K)/(determinante)
+	beta2<-beta2 + colSums(t(bjti2) * K)/(determinante)
+	beta3<-beta3 + colSums(t(bjti3) * K)/(determinante)
+
+	res<-max(c(abs(beta0-beta0_old),abs(beta1-beta1_old),abs(beta2-beta2_old),abs(beta3-beta3_old)))
+		
+	tol<-0.00001
+	b<-1
+	while(res>tol){
+
+
+		beta0_old<-beta0
+		beta1_old<-beta1
+		beta2_old<-beta2
+		beta3_old<-beta3
+
+		ts <- t(beta0+beta1*t(s)+beta2*t(s^2)+beta3*t(s^3))+alpha0+alpha1*x0
+		ets <- 1*y*exp(-ts)
+		K <- ets-1
+
+		bn0 <- apply(kxt * ets, 2, sum)
+		bn1 <- apply(kxt * ets * s, 2, sum)
+		bn2 <- apply(kxt * ets * s^2, 2, sum)
+		bn3 <- apply(kxt * ets * s^3, 2, sum)
+		bn4 <- apply(kxt * ets * s^4, 2, sum)
+		bn5 <- apply(kxt * ets * s^5, 2, sum)
+		bn6 <- apply(kxt * ets * s^6, 2, sum)
+
+
+		A11 <- bn2*bn4*bn6 +2*bn3*bn4*bn5 - bn4^3 - bn3^2*bn6 -bn2*bn5^2
+
+		A12 <- -bn1*bn4*bn6 -bn2*bn4*bn5 -bn3^2*bn5 + bn3*bn4^2 +bn2*bn3*bn6 + bn1*bn5^2
+
+		A13 <- bn1*bn3*bn6 + bn2*bn4^2 + bn2*bn3*bn5 - bn3^2*bn4 - bn2^2*bn6 - bn1*bn4*bn5
+
+		A14 <- -bn1*bn3*bn5 - 2*bn2*bn3*bn4 + bn3^3 +bn2^2*bn5 +bn1*bn4^2
+
+
+		bjti0 <-   t(kxt) * (A11 + t(s) * A12 + t(s^2) * A13  + t(s^3) * A14)
+	
+
+	
+		A21 <- - bn1*bn4*bn6 -bn3^2*bn5 -bn4*bn2*bn5 +bn4^2*bn3 +bn3*bn2*bn6 +bn1*bn5^2
+	
+		A22 <- bn0*bn4*bn6 + 2*bn2*bn5*bn3 + -bn3^2*bn4 - bn2^2*bn6 -bn0*bn5^2
+
+		A23 <- -bn0*bn3*bn6 -bn2*bn4*bn3 - bn3*bn1*bn5 + bn3^3 +bn2*bn1*bn6 +bn0*bn4*bn5
+	
+		A24 <- bn0*bn3*bn5 + bn2^2*bn4 +bn3*bn1*bn4 - bn3^2*bn2 -bn2*bn1*bn5 - bn0*bn4^2
+
+
+		bjti1 <- t(kxt) * (A21 + t(s)*A22 + t(s^2)*A23  + t(s^3)*A24)
+
+
+
+		A31 <- bn1*bn3*bn6 + bn2*bn5*bn3 + bn4^2*bn2 - bn4*bn3^2 - bn2^2*bn6 - bn1*bn5*bn4
+
+		A32 <- -bn0*bn3*bn6 - bn1*bn5*bn3 - bn3*bn2*bn4 +bn3^3 + bn1*bn2*bn6 + bn0*bn5*bn4
+
+		A33 <- bn0*bn2*bn6 + 2*bn1*bn3*bn4 - bn3^2*bn2 - bn1^2*bn6 - bn0*bn4^2
+
+		A34 <- -bn0*bn2*bn5 - bn1*bn4*bn2 - bn3^2*bn1 + bn3*bn2^2 + bn1^2*bn5 + bn0*bn3*bn4
+
+
+		bjti2 <- t(kxt) * (A31 + t(s) * A32 + t(s^2) * A33  + t(s^3) * A34)
+
+
+
+		A41 <- -bn1*bn3*bn5 - 2*bn2*bn3*bn4 + bn3^3 + bn2^2*bn5 + bn1*bn4^2
+
+		A42 <- bn0*bn3*bn5 + bn1*bn4*bn3 + bn2^2*bn4 - bn2*bn3^2 -bn1*bn2*bn5 -bn0*bn4^2
+
+		A43 <- -bn0*bn2*bn5 - bn1*bn3^2 - bn2*bn1*bn4 + bn2^2*bn3 + bn1^2*bn5 +bn0*bn3*bn4
+	
+		A44 <- bn0*bn2*bn4 + 2*bn1*bn2*bn3 - bn2^3 - bn1^2*bn4 - bn0*bn3^2
+
+
+		bjti3 <- t(kxt) * (A41 + t(s) * A42 + t(s^2) * A43  + t(s^3) * A44)
+
+
+
+		determinante<-bn3^4 - (3* bn2 * bn4 + 2 *bn1* bn5 + bn0 *bn6)* bn3^2 + 2 *((bn2^2 + bn0 *bn4)* bn5 + bn1 *(bn4^2 + bn2 *bn6))* bn3 - bn0* bn4^3 + bn2^2* bn4^2 + bn1^2 *bn5^2 - bn2^3* bn6 - bn1^2* bn4* bn6 + bn2* (bn0* (bn4* bn6 - bn5^2) - 2* bn1 *bn4* bn5)
+	
+
+		beta0<-beta0 + colSums(t(bjti0) * K)/(determinante)
+		beta1<-beta1 + colSums(t(bjti1) * K)/(determinante)
+		beta2<-beta2 + colSums(t(bjti2) * K)/(determinante)
+		beta3<-beta3 + colSums(t(bjti3) * K)/(determinante)
+
+		res<-max(c(abs(beta0-beta0_old),abs(beta1-beta1_old),abs(beta2-beta2_old),abs(beta3-beta3_old)))
+
+		b<-b+1
+	}
+
+
+	return(list(beta0,beta1,beta2,beta3))
+}
+
+
+
+bias_gamma_plm_p3<-function(xseq,theta,x0,y,kappa,kappa_ast,alpha0,alpha1,startv){
+
+	x_t <- outer(theta, xseq, "-")
+	s <- sin(x_t)
+	estp3<-gamma_plm_p3(xseq,theta,x0,y,kappa_ast,alpha0,alpha1,startv)
+	r<-estp3[[3]]*t(s^2)+estp3[[4]]*t(s^3)
+
+
+	k<-length(xseq)
+	beta0<-rep(startv[1],k)
+	beta1<-rep(startv[2],k)
+	kxt <- exp(kappa * cos(x_t))/(besselI(kappa,0)*2*pi)
+	ts <- (t(beta0+beta1*t(s))+alpha0+alpha1*x0)
+	ets <- 1*y*exp(-ts)
+
+	bn0 <- apply(kxt * ets, 2, sum)
+	bn1 <- apply(kxt * ets * s, 2, sum)
+	bn2 <- apply(kxt * ets * s^2, 2, sum)
+	bjti0 <-  t(kxt)*(bn2 - t(s) * bn1)
+
+	
+	bjti1 <-  t(kxt)*(t(s)*bn0 - bn1)
+
+
+	K <- ets-1
+	
+
+	beta0<-beta0 + colSums(t(bjti0) * K)/(bn2*bn0-bn1^2)
+	beta1<-beta1 + colSums(t(bjti1) * K)/(bn2*bn0-bn1^2)
+
+	res<-5000
+	tol<-0.001
+	b<-0
+	while(res>tol){
+
+
+		beta0_old<-beta0
+		beta1_old<-beta1
+
+		ts <- (t(beta0+beta1*t(s))+alpha0+alpha1*x0)
+		ets <- 1*y*exp(-ts)
+		K <- ets-1
+		bn0 <- apply(kxt * ets, 2, sum)
+		bn1 <- apply(kxt * ets * s, 2, sum)
+		bn2 <- apply(kxt * ets * s^2, 2, sum)
+		bjti0 <- t(kxt)*(bn2 - t(s) * bn1)
+		bjti1 <- t(kxt)*(t(s)*bn0 - bn1)
+
+		beta0<-beta0 + colSums(t(bjti0) * K)/(bn2*bn0-bn1^2)
+		beta1<-beta1 + colSums(t(bjti1) * K)/(bn2*bn0-bn1^2)
+
+		res<-max(c(abs(beta0-beta0_old),abs(beta1-beta1_old)))
+		b<-b+1
+		
+	}
+	ts <- (t(beta0+beta1*t(s)+r)+alpha0+alpha1*x0)
+	ets <- ets <- 1*y*exp(-ts)
+	K <- ets-1
+	bn0 <- apply(kxt * ets, 2, sum)
+	bn1 <- apply(kxt * ets * s, 2, sum)
+	bn2 <- apply(kxt * ets * s^2, 2, sum)
+	bjti0 <- t(kxt)*(bn2 - t(s) * bn1)
+	
+	res <- - colSums(t(bjti0) * K)/(bn2*bn0-bn1^2)
+
+
+	return(res)
+}
+
+
+
+variance_gamma_plm_p1<-function(xseq,theta,x0,y,kappa,kappa_ast,alpha0,alpha1,startv){
+	
+	ggp3<-gamma_plm_p3(theta,theta,x0,y,kappa_ast,alpha0,alpha1,startv)[[1]]
+	e_gY_1_2<-(y*exp(-alpha0-alpha1*x0-ggp3)-1)^2
+
+	x_t <- outer(theta, xseq, "-")
+	
+	kxt_ast <- exp(kappa_ast * cos(x_t))
+	y_kxt_ast<- e_gY_1_2*kxt_ast
+	sigma2<-apply(y_kxt_ast,2,sum)/apply(kxt_ast,2,sum)
+
+	estp1<-gamma_2(xseq,theta,x0,y,kappa,alpha0,alpha1,startv)
+
+	kxt <- exp(kappa * cos(x_t))
+	kxt2<-kxt^2
+	s <- sin(x_t)
+
+	ts <- t(estp1[[1]]+estp1[[2]]*t(s)+alpha0+alpha1*x0)
+	ets <- ets <- 1*y*exp(-ts)
+
+	bn0 <- apply(kxt * ets, 2, sum)
+	bn1 <- apply(kxt * ets * s, 2, sum)
+	bn2 <- apply(kxt * ets * s^2, 2, sum)
+	gn0 <- apply(kxt2 , 2, sum)
+	gn1 <- apply(kxt2 * s, 2, sum)
+	gn2 <- apply(kxt2 * s^2, 2, sum)
+	eSnGnSne<-(bn2^2*gn0-2*bn1*bn2*gn1+bn1^2*gn2)/(bn0^2*bn2^2-2*bn1^2*bn0*bn2+bn1^4)
+
+	res<-sigma2*eSnGnSne
+
+	return(res)
+
+}
+
+
+
+gamma_plm_CRSC<-function(xseq,theta,x0,y,kappa_ast,alpha0,alpha1,startv){
+
+	estp3<-gamma_plm_p3(xseq,theta,x0,y,kappa_ast,alpha0,alpha1,startv)
+	e_estp3_1<-exp(estp3[[1]])
+	x_t <- outer(theta, xseq, "-")
+	s <- sin(x_t)
+	ts <- t(estp3[[1]]+estp3[[2]]*t(s)+estp3[[3]]*t(s^2)+estp3[[4]]*t(s^3)+alpha0+alpha1*x0)
+	ets <- 1*y*exp(-ts)
+
+	zZ2<-t(t(ets/1-1))^2
+
+	kxt <- exp(kappa_ast * cos(x_t))/(besselI(kappa_ast,0)*2*pi)
+	z_kxt<- zZ2*kxt
+	num<-apply(z_kxt,2,sum)
+
+
+	sn0 <- apply(kxt , 2, sum)
+	sn1 <- apply(kxt * s, 2, sum)
+	sn2 <- apply(kxt * s^2, 2, sum)
+	sn3 <- apply(kxt * s^3, 2, sum)
+	sn4 <- apply(kxt * s^4, 2, sum)
+	sn5 <- apply(kxt * s^5, 2, sum)
+	sn6 <- apply(kxt * s^6, 2, sum)
+	gn0 <- apply(kxt^2 , 2, sum)
+	gn1 <- apply(kxt^2 * s, 2, sum)
+	gn2 <- apply(kxt^2 * s^2, 2, sum)
+	gn3 <- apply(kxt^2 * s^3, 2, sum)
+	gn4 <- apply(kxt^2 * s^4, 2, sum)
+	gn5 <- apply(kxt^2 * s^5, 2, sum)
+	gn6 <- apply(kxt^2 * s^6, 2, sum)
+
+
+	A11 <- sn2*sn4*sn6 +2*sn3*sn4*sn5 - sn4^3 - sn3^2*sn6 -sn2*sn5^2
+
+	A12 <- -sn1*sn4*sn6 -sn2*sn4*sn5 -sn3^2*sn5 + sn3*sn4^2 +sn2*sn3*sn6 + sn1*sn5^2
+
+	A13 <- sn1*sn3*sn6 + sn2*sn4^2 + sn2*sn3*sn5 - sn3^2*sn4 - sn2^2*sn6 - sn1*sn4*sn5
+
+	A14 <- -sn1*sn3*sn5 - 2*sn2*sn3*sn4+sn3^3 +sn2^2*sn5 +sn1*sn4^2
+
+	bjti <-  t(kxt) * (A11 + t(s) * A12 + t(s^2) * A13  + t(s^3) * A14)
+	determinante <- apply(bjti, 1, sum)
+	
+	
+	A21 <- - sn1*sn4*sn6 -sn3^2*sn5 -sn4*sn2*sn5 +sn4^2*sn3 +sn3*sn2*sn6 +sn1*sn5^2
+	
+	A22 <- sn0*sn4*sn6 +sn2*sn5*sn3 + sn3*sn5^2 -sn3^2*sn4 - sn2^2*sn6 -sn0*sn5^2
+
+	A23 <- -sn0*sn3*sn6 -sn2*sn4*sn3 - sn3*sn1*sn5 + sn3^3 +sn2*sn1*sn6 +sn0*sn4*sn5
+	
+	A24 <- sn0*sn3*sn5 + sn2^2*sn4 +sn3*sn1*sn4 - sn3^2*sn2 -sn2*sn1*sn5 - sn0*sn4^2
+
+
+	A31 <- sn1*sn3*sn6 + sn2*sn5*sn3 + sn4^2*sn2 - sn4*sn3^2 - sn2^2*sn6 - sn1*sn5*sn4
+
+	A32 <- -sn0*sn3*sn6 - sn1*sn5*sn3 - sn3*sn2*sn4 +sn3^3 + sn1*sn2*sn6 + sn0*sn5*sn4
+
+	A33 <- sn0*sn2*sn6 + 2*sn1*sn3*sn4 - sn3^2*sn2 - sn1^2*sn6 - sn0*sn4^2
+
+	A34 <- -sn0*sn2*sn5 - sn1*sn4*sn2 - sn3^2*sn1 + sn3*sn2^2 + sn1^2*sn5 + sn0*sn3*sn4
+
+
+
+	A41 <- -sn1*sn3*sn5 - 2*sn2*sn3*sn4 + sn3^3 + sn2^2*sn5 + sn1*sn4^2
+
+	A42 <- sn0*sn3*sn5 + sn1*sn4*sn3 + sn2^2*sn4 - sn2*sn3^2 -sn1*sn2*sn5 -sn0*sn4^2
+
+	A43 <- -sn0*sn2*sn5 - sn1*sn3^2 - sn2*sn1*sn4 + sn2^2*sn3 + sn1^2*sn5 +sn0*sn3*sn4
+
+	A44 <- sn0*sn2*sn4 + 2*sn1*sn2*sn3 - sn2^3 - sn1^2*sn4 - sn0*sn3^2
+
+
+	traceSnGn_num <- (A11*gn0 + A12*gn1 + A13*gn2 + A14 *gn3 +
+				A21*gn1 + A22*gn2 + A23*gn3 + A24*gn4 +
+				A31*gn2 + A32*gn3 + A33*gn4 + A34*gn5 +
+				A41*gn3 + A42*gn4 + A43*gn5 + A44*gn6)
+
+	traceSnGn <- traceSnGn_num / (determinante)
+
+	denom <- sn0 - traceSnGn
+
+	sigma2<-num/denom
+
+	b11 <- A11*gn0+A12*gn1+A13*gn2+A14*gn3
+
+	b12 <- A11*gn1+A12*gn2+A13*gn3+A14*gn4
+
+	b13 <- A11*gn2+A12*gn3+A13*gn4+A14*gn5
+
+	b14 <- A11*gn3+A12*gn4+A13*gn5+A14*gn6
+
+	eSnGnSne <- (b11*A11+b12*A21 + b13*A31 + b14*A41)/(determinante^2)
+
+	result <- sigma2*(1+4*eSnGnSne)
+	return(result)
+	
+}
+
+
+
+# Integrated versions
+
+library(Bolstad2)
+
+gamma_plm_MSE_int<-function(xseq,theta,x0,y,kappa,kappa_ast,alpha0,alpha1,startv){
+
+	bb2<-bias_gamma_plm_p3(xseq,theta,x0,y,kappa,kappa_ast,alpha0,alpha1,startv)^2
+	vv<-variance_gamma_plm_p1(xseq,theta,x0,y,kappa,kappa_ast,alpha0,alpha1,startv)
+	mse<-bb2+vv
+	integraal<-sintegral(xseq,mse)$int
+	return(integraal)
+}
+
+gamma_CRSC_int<-function(xseq,theta,x0,y,kappa_ast,alpha0,alpha1,startv){
+
+	CRSC_results<-gamma_plm_CRSC(xseq,theta,x0,y,kappa_ast,alpha0,alpha1,startv)
+	int<-sintegral(xseq,CRSC_results)$int
+	return(int)
+}
+
+
+	
+
+CRSC_plm_p1<-function(xseq,theta,x0,y,kappa,alpha0,alpha1,startv){
+
+	estp1<-gamma_2(xseq,theta,x0,y,kappa,alpha0,alpha1,startv)
+	e_estp1_1<-exp(estp1[[1]])
+	x_t <- outer(theta, xseq, "-")
+	s <- sin(x_t)
+	ts <- t(estp1[[1]]+estp1[[2]]*t(s)+alpha0+alpha1*x0)
+	ets <- ets <- 1*y*exp(-ts)
+
+	zZ2<-t(t(ets-1))^2
+
+	kxt <- exp(kappa * cos(x_t))/(besselI(kappa,0)*2*pi)
+	z_kxt<- zZ2*kxt
+	num<-apply(z_kxt,2,sum)
+
+
+	sn0 <- apply(kxt , 2, sum)
+	sn1 <- apply(kxt * s, 2, sum)
+	sn2 <- apply(kxt * s^2, 2, sum)
+	gn0 <- apply(kxt^2 , 2, sum)
+	gn1 <- apply(kxt^2 * s, 2, sum)
+	gn2 <- apply(kxt^2 * s^2, 2, sum)
+
+
+
+	
+	bjti <-  t(kxt) * (t(s)*sn0 - sn1)
+	determinante <- apply(bjti, 1, sum)
+	
+
+	denom <- sn0 - (sn2*gn0 + sn0*gn2 - 2*sn1*gn1)/(sn0*sn2-sn1^2)
+
+
+	sigma2<-num/denom
+
+	
+	eSnGnSne <- (sn2^2*gn0-2*sn1*sn2*gn1+sn1^2*gn2)/((sn0*sn2-sn1^2)^2)
+
+
+	result <- sigma2*(1+2*eSnGnSne)
+	return(result)
+	
+}
+
+gamma_plm_CRSC_p1_int<-function(xseq,theta,x0,y,kappa,alpha0,alpha1,startv){
+
+	CRSC_results<-CRSC_plm_p1(xseq,theta,x0,y,kappa,alpha0,alpha1,startv)
+	int<-sintegral(xseq,CRSC_results)$int
+	return(int)
+}
+
 
 
